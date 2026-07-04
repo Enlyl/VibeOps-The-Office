@@ -1,0 +1,13 @@
+{
+  "mastered_concepts": [
+    "Isolated Code Execution & Sandboxing"
+  ],
+  "struggles": [
+    "State Mutation Risks (inplace=True / drop / delete)",
+    "Socratic Method Violations (Elena Code Blocks)",
+    "Runtime Errors in Sandbox Code"
+  ],
+  "session_count": 185,
+  "last_active": "2026-07-03T19:06:45",
+  "history_facts": []
+}

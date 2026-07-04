@@ -1,0 +1,58 @@
+# =====================================================
+# VibeOps .gitignore
+# =====================================================
+
+# --- SECRETS (Pillar 8: Security & Secrets Management) ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Distribution / Build ---
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Sandbox & Execution Artifacts (Pillar 4) ---
+sandbox_output/
+*.sandbox.log
+
+# --- Long-term Memory / User Profiles (Pillar 5) ---
+workspace/user_profiles/
+workspace/*.session
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
