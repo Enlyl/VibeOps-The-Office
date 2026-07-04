@@ -9,8 +9,6 @@ import asyncio
 import atexit
 import json
 import logging
-import os
-import signal
 import threading
 from pathlib import Path
 from typing import Any

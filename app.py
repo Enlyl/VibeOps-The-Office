@@ -4,7 +4,7 @@ import re
 sys.stdout.reconfigure(encoding="utf-8")
 from llm_interface import call_live_gemini_api, call_with_tools, get_mock_response
 from sandbox import execute_python_code
-from mcp_manager import get_mcp_manager, initialize_mcp_sync, shutdown_mcp, get_all_tools_sync, call_tool_sync
+from mcp_manager import initialize_mcp_sync, get_all_tools_sync, call_tool_sync
 from pathlib import Path
 import pandas as pd
 
@@ -48,6 +48,14 @@ ELENA_SYSTEM_PROMPT = (
     "Use 'search_docs(library=, query=)' to find official docs for Python/DS libraries. "
     "Use 'fetch_url(url=)' to read content from any webpage. "
     "These tools help you verify facts and provide accurate guidance.]"
+    "[CRITICAL CONVERSATION FLOW RULES] "
+    "NEVER introduce yourself or state your role after the very first message of the conversation. "
+    "DO NOT use repetitive greetings (like 'Привет!', 'Здравствуйте!', 'Рад помочь!') "
+    "if this is a follow-up question or an ongoing discussion. "
+    "If the user is continuing a topic or replying to your previous point, "
+    "skip the pleasantries entirely. Dive IMMEDIATELY into the context, "
+    "answer the question, or provide the guidance directly. "
+    "Keep the dialogue fluid, natural, and continuous, like a real-time chat with a colleague."
 )
 
 CHAD_SYSTEM_PROMPT = (
@@ -60,6 +68,11 @@ CHAD_SYSTEM_PROMPT = (
     " [MCP TOOLS AVAILABLE: You can use 'search_docs(library=, query=)' "
     "to look up documentation, 'fetch_url(url=)' to read web pages, "
     "and 'fetch(url=)' to fetch web content. Use these to find quick solutions.]"
+    "[CRITICAL CONVERSATION FLOW RULES] "
+    "NEVER introduce yourself or state your role after the very first message of the conversation. "
+    "DO NOT use repetitive greetings. "
+    "If the user is continuing a topic or replying to your previous point, "
+    "skip pleasantries entirely. Dive IMMEDIATELY into the solution."
 )
 
 ROBERT_SYSTEM_PROMPT = (
@@ -71,8 +84,29 @@ ROBERT_SYSTEM_PROMPT = (
     " [MCP TOOLS AVAILABLE: You have access to 'search_docs(library=, query=)' "
     "to look up official Python/DS library documentation, and 'fetch_url(url=)' "
     "to read content from any webpage. Use these to verify API signatures and best practices.]"
+    "[CRITICAL CONVERSATION FLOW RULES] "
+    "NEVER introduce yourself or state your role after the very first message of the conversation. "
+    "DO NOT use repetitive greetings. "
+    "If the user is continuing a topic or replying to your previous point, "
+    "skip pleasantries entirely. Focus on correctness and results."
 )
 
+GEOFFREY_SYSTEM_PROMPT = (
+    "[CRITICAL: Always communicate in Russian.] "
+    "You are Geoffrey — the Godfather of Deep Learning. "
+    "You are an absolute expert in Neural Networks, Transformers, PyTorch, "
+    "Computer Vision, NLP, and advanced ML optimization "
+    "(Kaggle-tier ensembles, loss functions, hyperparameter tuning, etc.). "
+    "Your tone is wise, slightly academic, but highly pragmatic. "
+    "You explain WHY things work mathematically or architecturally, "
+    "rather than just giving code. "
+    "Focus on state-of-the-art solutions and deep structural understanding."
+    "[CRITICAL CONVERSATION FLOW RULES] "
+    "NEVER introduce yourself or state your role after the very first message of the conversation. "
+    "DO NOT use repetitive greetings. "
+    "If the user is continuing a topic or replying to your previous point, "
+    "skip pleasantries entirely. Provide deep technical insight directly."
+)
 
 def determine_active_agent(user_input: str) -> str:
     """Route user input to the correct agent."""
@@ -83,6 +117,8 @@ def determine_active_agent(user_input: str) -> str:
         return "robert"
     if "чед" in text or "chad" in text:
         return "chad"
+    if "джеффри" in text or "джеф" in text or "geoffrey" in text or "jeff" in text:
+        return "geoffrey"
     if "елена" in text or "elena" in text:
         return "elena"
 
@@ -164,8 +200,8 @@ _THEMES = {
             }
             .terminal-line { border-bottom: 1px solid #0d0e16; padding: 3px 0; }
             .terminal-line:last-child { border-bottom: none; }
-            .user-content, .elena-content, .chad-content, .robert-content { border: 1px solid #232635; border-radius: 8px; transition: border-color 0.2s ease; }
-            .user-content:hover, .elena-content:hover, .chad-content:hover, .robert-content:hover { border-color: #2a2d3a; }
+            .user-content, .elena-content, .chad-content, .robert-content, .geoffrey-content { border: 1px solid #232635; border-radius: 8px; transition: border-color 0.2s ease; }
+            .user-content:hover, .elena-content:hover, .chad-content:hover, .robert-content:hover, .geoffrey-content:hover { border-color: #2a2d3a; }
             .user-content { background-color: #212433; padding: 12px 16px; color: #bfc7d5; font-size: 16px; margin: 4px 0; }
             .elena-content {
                 background-color: #171924;
@@ -198,6 +234,16 @@ _THEMES = {
                 font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
             }
             .robert-content strong { color: #ffcb6b; }
+            .geoffrey-content {
+                background-color: #171924;
+                border-left: 4px solid #ffd700;
+                padding: 14px 18px;
+                color: #c8d0e0;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+            }
+            .geoffrey-content strong { color: #ffd700; }
             [data-testid="chatMessage"] { margin-bottom: 8px; }
             .sandbox-output {
                 background-color: #050608;
@@ -310,7 +356,7 @@ _THEMES = {
             }
             .terminal-line { border-bottom: 1px solid #2b3036; padding: 3px 0; }
             .terminal-line:last-child { border-bottom: none; }
-            .user-content, .elena-content, .chad-content, .robert-content { border-radius: 6px; }
+            .user-content, .elena-content, .chad-content, .robert-content, .geoffrey-content { border-radius: 6px; }
             .user-content {
                 background-color: #ffffff;
                 border: 1px solid #d0d7de;
@@ -363,6 +409,20 @@ _THEMES = {
                 box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             }
             .robert-content strong { color: #f66a0a; }
+            .geoffrey-content {
+                background-color: #ffffff;
+                border-left: 4px solid #d4a017;
+                border-top: 1px solid #d0d7de;
+                border-right: 1px solid #d0d7de;
+                border-bottom: 1px solid #d0d7de;
+                padding: 14px 18px;
+                color: #24292f;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .geoffrey-content strong { color: #d4a017; }
             [data-testid="chatMessage"] { margin-bottom: 8px; }
             .sandbox-output {
                 background-color: #1f2428;
@@ -533,6 +593,19 @@ _THEMES = {
                 box-shadow: 0 0 12px rgba(255, 0, 127, 0.15);
             }
             .robert-content strong { color: #ff007f; text-shadow: 0 0 4px #ff007f; }
+            .geoffrey-content {
+                background-color: #0a0018;
+                border: 1px solid #ffd700;
+                border-left: 4px solid #ffd700;
+                border-radius: 4px;
+                padding: 14px 18px;
+                color: #ffe680;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 0 12px rgba(255, 215, 0, 0.15);
+            }
+            .geoffrey-content strong { color: #ffd700; text-shadow: 0 0 4px #ffd700; }
             [data-testid="chatMessage"] { margin-bottom: 8px; }
             .sandbox-output {
                 background-color: #000000;
@@ -699,6 +772,19 @@ _THEMES = {
                 margin: 4px 0;
             }
             .robert-content strong { color: #ffff00; }
+            .geoffrey-content {
+                background-color: #000000;
+                border: 3px solid #ffd700 !important;
+                border-radius: 0px !important;
+                padding: 14px 18px;
+                color: #ffffff;
+                font-family: 'Courier New', monospace !important;
+                font-weight: 900 !important;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+            }
+            .geoffrey-content strong { color: #ffd700; }
             [data-testid="chatMessage"] { margin-bottom: 8px; }
             .sandbox-output {
                 background-color: #000000;
@@ -870,6 +956,19 @@ _THEMES = {
                 box-shadow: 0 0 4px #ffb000;
             }
             .robert-content strong { color: #ffcc33; }
+            .geoffrey-content {
+                background-color: #080c0a;
+                border: 1px solid #ffd700;
+                border-left: 4px solid #ffd700;
+                border-radius: 6px;
+                padding: 14px 18px;
+                color: #ffe680;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 0 4px #ffd700;
+            }
+            .geoffrey-content strong { color: #ffd700; }
             [data-testid="chatMessage"] { margin-bottom: 8px; }
             .sandbox-output {
                 background-color: #050807;
@@ -1000,10 +1099,6 @@ def set_theme(name: str = "dark-tech") -> None:
     )
 
 
-def inject_custom_css() -> None:
-    """Alias — applies default theme (Dark Tech)."""
-    set_theme("dark-tech")
-
 st.set_page_config(page_title="VibeOps MVP", layout="wide")
 
 # ── State ──────────────────────────────────────────────────────────────────
@@ -1043,7 +1138,7 @@ if not st.session_state["mcp_initialized"]:
 
 # ── Sidebar ────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🛠️ VibeOps Cockpit")
+    st.markdown("## 🛠️ VibeOps: The Office")
 
     st.toggle(
         "🔌 Offline Simulation Mode",
@@ -1051,12 +1146,6 @@ with st.sidebar:
         value=st.session_state["mock_mode"],
     )
     st.session_state["mock_mode"] = st.session_state.mock_toggle
-
-    # ── MCP Status ─────────────────────────────────────────────────────────
-    mcp_ok = st.session_state.get("mcp_available", False)
-    mcp_count = len(st.session_state.get("mcp_tools", []))
-    status_icon = "🟢" if mcp_ok else "🔴"
-    st.caption(f"{status_icon} MCP Servers: {mcp_count} tools available" if mcp_ok else f"{status_icon} MCP Servers: offline")
 
     # ── Agent Skills Matrix ─────────────────────────────────────────────────
     with st.expander("⚙️ Agents", expanded=False):
@@ -1176,6 +1265,9 @@ def _render_message(msg: dict):
     elif agent == "robert":
         with st.chat_message("assistant", avatar="🛠️"):
             st.markdown(_message_html(msg["content"], "robert-content", "Robert"), unsafe_allow_html=True)
+    elif agent == "geoffrey":
+        with st.chat_message("assistant", avatar="👔"):
+            st.markdown(_message_html(msg["content"], "geoffrey-content", "Geoffrey"), unsafe_allow_html=True)
     else:
         with st.chat_message("assistant"):
             st.write(msg["content"])
@@ -1201,6 +1293,17 @@ for msg in st.session_state.messages:
 # ── Main: Chat Input ───────────────────────────────────────────────────────
 if user_input := st.chat_input("Your message…"):
     text_clean = user_input.strip()
+
+    # Build conversation history context for LLM
+    if len(st.session_state.messages) > 1:
+        history_lines = []
+        for msg in st.session_state.messages[:-1]:
+            speaker = "User" if msg["role"] == "user" else msg.get("agent", "Assistant").capitalize()
+            history_lines.append(f"{speaker}: {msg['content'][:500]}")
+        history_context = "--- Previous conversation:\n" + "\n".join(history_lines[-6:]) + "\n---\n"
+    else:
+        history_context = ""
+    prompt_with_history = history_context + text_clean
 
     st.session_state.messages.append({"role": "user", "content": text_clean})
     with st.chat_message("user", avatar="🧑"):
@@ -1239,11 +1342,11 @@ if user_input := st.chat_input("Your message…"):
                 try:
                     if mcp_available and mcp_tools:
                         agent_text = call_with_tools(
-                            robert_context, text_clean, mcp_tools,
+                            robert_context, prompt_with_history, mcp_tools,
                             lambda s, n, a: call_tool_sync(s, n, a),
                         )
                     else:
-                        agent_text = call_live_gemini_api(robert_context, text_clean)
+                        agent_text = call_live_gemini_api(robert_context, prompt_with_history)
                 except Exception:
                     agent_text = get_mock_response("robert_429", workspace_info=workspace_info)
 
@@ -1264,16 +1367,38 @@ if user_input := st.chat_input("Your message…"):
                 try:
                     if mcp_available and mcp_tools:
                         agent_text = call_with_tools(
-                            chad_context, text_clean, mcp_tools,
+                            chad_context, prompt_with_history, mcp_tools,
                             lambda s, n, a: call_tool_sync(s, n, a),
                         )
                     else:
-                        agent_text = call_live_gemini_api(chad_context, text_clean)
+                        agent_text = call_live_gemini_api(chad_context, prompt_with_history)
                 except Exception:
                     agent_text = get_mock_response("chad_429", workspace_info=workspace_info)
 
             st.markdown(_message_html(agent_text, "chad-content", "Chad"), unsafe_allow_html=True)
             st.session_state.messages.append({"role": "assistant", "content": agent_text, "agent": "chad"})
+    elif active_agent == "geoffrey":
+        with st.chat_message("assistant", avatar="👔"):
+            st.session_state.log_entries.append("👔 Invoking Geoffrey (Head of AI)")
+
+            geoffrey_context = f"{GEOFFREY_SYSTEM_PROMPT}\n\n{workspace_info}"
+
+            if st.session_state["mock_mode"]:
+                agent_text = get_mock_response("geoffrey", workspace_info=workspace_info)
+            else:
+                try:
+                    if mcp_available and mcp_tools:
+                        agent_text = call_with_tools(
+                            geoffrey_context, prompt_with_history, mcp_tools,
+                            lambda s, n, a: call_tool_sync(s, n, a),
+                        )
+                    else:
+                        agent_text = call_live_gemini_api(geoffrey_context, prompt_with_history)
+                except Exception:
+                    agent_text = get_mock_response("geoffrey_429", workspace_info=workspace_info)
+
+            st.markdown(_message_html(agent_text, "geoffrey-content", "Geoffrey"), unsafe_allow_html=True)
+            st.session_state.messages.append({"role": "assistant", "content": agent_text, "agent": "geoffrey"})
     else:
         with st.chat_message("assistant", avatar="🧠"):
             st.session_state.log_entries.append("🧠 Invoking Elena (Mentor)")
@@ -1286,17 +1411,15 @@ if user_input := st.chat_input("Your message…"):
                 try:
                     if mcp_available and mcp_tools:
                         agent_text = call_with_tools(
-                            elena_context, text_clean, mcp_tools,
+                            elena_context, prompt_with_history, mcp_tools,
                             lambda s, n, a: call_tool_sync(s, n, a),
                         )
                     else:
-                        agent_text = call_live_gemini_api(elena_context, text_clean)
+                        agent_text = call_live_gemini_api(elena_context, prompt_with_history)
                 except Exception:
                     agent_text = get_mock_response("elena_429", workspace_info=workspace_info)
 
             st.markdown(_message_html(agent_text, "elena-content", "Elena"), unsafe_allow_html=True)
             st.session_state.messages.append({"role": "assistant", "content": agent_text, "agent": "elena"})
 
-
-# ── Theme Registry ──────────────────────────────────────────────────────────
 

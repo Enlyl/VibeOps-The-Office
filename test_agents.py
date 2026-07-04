@@ -14,10 +14,10 @@ test_agents.py — Быстрая проверка всех агентов и р
 """
 
 import sys
-import os
+from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from orchestrator import Orchestrator
 
