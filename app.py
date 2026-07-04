@@ -1319,12 +1319,14 @@ if user_input := st.chat_input("Your message…"):
         with st.chat_message("assistant", avatar="🛠️"):
             st.session_state.log_entries.append("🤖 Invoking Robert (Sandbox)")
 
+            sandbox_note = ""
             has_code = (
                 "```python" in text_clean
                 or text_clean.startswith("import ")
                 or text_clean.startswith("def ")
             )
             if has_code:
+                st.session_state.sandbox_output = ""
                 match = re.search(r"```python\n?(.*?)```", text_clean, re.DOTALL)
                 code = match.group(1).strip() if match else text_clean
                 try:
@@ -1334,7 +1336,17 @@ if user_input := st.chat_input("Your message…"):
                 except Exception as e:
                     sandbox_note = f"\n\nSandbox error:\n{e}"
 
-            robert_context = f"{ROBERT_SYSTEM_PROMPT}\n\n{workspace_info}"
+            sandbox_live = bool(sandbox_note)
+            if sandbox_live:
+                robert_context = (
+                    f"{ROBERT_SYSTEM_PROMPT}\n\n"
+                    "[SANDBOX: The sandbox is LIVE and operational. "
+                    "Do not use the (Simulation) prefix. "
+                    "Directly analyze the provided execution output.]\n\n"
+                    f"{workspace_info}"
+                )
+            else:
+                robert_context = f"{ROBERT_SYSTEM_PROMPT}\n\n{workspace_info}"
 
             if st.session_state["mock_mode"]:
                 agent_text = get_mock_response("robert", workspace_info=workspace_info)
@@ -1348,9 +1360,12 @@ if user_input := st.chat_input("Your message…"):
                     else:
                         agent_text = call_live_gemini_api(robert_context, prompt_with_history)
                 except Exception:
-                    agent_text = get_mock_response("robert_429", workspace_info=workspace_info)
+                    if sandbox_live:
+                        agent_text = get_mock_response("robert_sandbox_ok", workspace_info=workspace_info)
+                    else:
+                        agent_text = get_mock_response("robert_429", workspace_info=workspace_info)
 
-            if has_code:
+            if sandbox_note:
                 agent_text += sandbox_note
 
             st.markdown(_message_html(agent_text, "robert-content", "Robert"), unsafe_allow_html=True)

@@ -192,6 +192,12 @@ def get_mock_response(agent: str, workspace_info: str = "") -> str:
             "The sandbox is ready. If you need code executed, "
             "paste it and I'll run it with full traceback logging."
         ),
+        "robert_sandbox_ok": (
+            "🛠️ **ROBERT:** The sandbox executed successfully. "
+            f"{ws}\n\n"
+            "Review the execution output below — it contains stdout, stderr, "
+            "and performance metrics from the live run."
+        ),
         "robert_429": (
             "🛠️ **ROBERT (Simulation):** Live sandbox API is unavailable. "
             f"{ws}\n\n"
