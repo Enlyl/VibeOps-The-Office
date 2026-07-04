@@ -2,8 +2,9 @@ import streamlit as st
 import sys
 import re
 sys.stdout.reconfigure(encoding="utf-8")
-from llm_interface import call_live_gemini_api, get_mock_response
+from llm_interface import call_live_gemini_api, call_with_tools, get_mock_response
 from sandbox import execute_python_code
+from mcp_manager import get_mcp_manager, initialize_mcp_sync, shutdown_mcp, get_all_tools_sync, call_tool_sync
 from pathlib import Path
 import pandas as pd
 
@@ -43,6 +44,22 @@ ELENA_SYSTEM_PROMPT = (
     "df[...] or pd.read_csv(). Instead, explain the logic conceptually. "
     "Use metaphors (e.g., 'mask', 'filter') and ask guiding questions "
     "to make the user write the code themselves.]"
+    " [MCP TOOLS AVAILABLE: You have access to documentation search tools. "
+    "Use 'search_docs(library=, query=)' to find official docs for Python/DS libraries. "
+    "Use 'fetch_url(url=)' to read content from any webpage. "
+    "These tools help you verify facts and provide accurate guidance.]"
+)
+
+CHAD_SYSTEM_PROMPT = (
+    "[CRITICAL: Always communicate in the language in which the question was asked.] "
+    "You are Chad, a vibe coder junior data scientist. "
+    "Your tone is hyperactive, overconfident, and casual. "
+    "You suggest quick, often destructive solutions. "
+    "When you mention destructive operations (e.g., inplace=True), "
+    "Elena will be notified to warn the user."
+    " [MCP TOOLS AVAILABLE: You can use 'search_docs(library=, query=)' "
+    "to look up documentation, 'fetch_url(url=)' to read web pages, "
+    "and 'fetch(url=)' to fetch web content. Use these to find quick solutions.]"
 )
 
 ROBERT_SYSTEM_PROMPT = (
@@ -51,6 +68,9 @@ ROBERT_SYSTEM_PROMPT = (
     "You run code in an isolated sandbox, check for errors, and report results. "
     "When the user gives you code, execute it and explain the output. "
     "Focus on correctness, performance, and reproducibility."
+    " [MCP TOOLS AVAILABLE: You have access to 'search_docs(library=, query=)' "
+    "to look up official Python/DS library documentation, and 'fetch_url(url=)' "
+    "to read content from any webpage. Use these to verify API signatures and best practices.]"
 )
 
 
@@ -61,6 +81,8 @@ def determine_active_agent(user_input: str) -> str:
     # 1. Explicit name mention (highest priority)
     if "роберт" in text or "robert" in text:
         return "robert"
+    if "чед" in text or "chad" in text:
+        return "chad"
     if "елена" in text or "elena" in text:
         return "elena"
 
@@ -142,8 +164,8 @@ _THEMES = {
             }
             .terminal-line { border-bottom: 1px solid #0d0e16; padding: 3px 0; }
             .terminal-line:last-child { border-bottom: none; }
-            .user-content, .elena-content, .robert-content { border: 1px solid #232635; border-radius: 8px; transition: border-color 0.2s ease; }
-            .user-content:hover, .elena-content:hover, .robert-content:hover { border-color: #2a2d3a; }
+            .user-content, .elena-content, .chad-content, .robert-content { border: 1px solid #232635; border-radius: 8px; transition: border-color 0.2s ease; }
+            .user-content:hover, .elena-content:hover, .chad-content:hover, .robert-content:hover { border-color: #2a2d3a; }
             .user-content { background-color: #212433; padding: 12px 16px; color: #bfc7d5; font-size: 16px; margin: 4px 0; }
             .elena-content {
                 background-color: #171924;
@@ -155,6 +177,16 @@ _THEMES = {
                 margin: 4px 0;
             }
             .elena-content strong { color: #a6c1ff; }
+            .chad-content {
+                background-color: #171924;
+                border-left: 4px solid #ff9e3b;
+                padding: 14px 18px;
+                color: #c8d0e0;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+            }
+            .chad-content strong { color: #ff9e3b; }
             .robert-content {
                 background-color: #171924;
                 border-left: 4px solid #ffcb6b;
@@ -195,7 +227,27 @@ _THEMES = {
             [data-testid="stChatInput"] input::placeholder { color: #5a607a; }
             [data-testid="stFileUploader"] { background-color: #0b0d14; border: 1px dashed #1e2030; border-radius: 6px; padding: 8px; }
             [data-testid="stFileUploader"]:hover { border-color: #82aaff; }
-            [data-testid="stSelectbox"] label { color: #a6accd; font-size: 12px; }
+            [data-testid="stSelectbox"] label {
+                color: #bfc7d5;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 15px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
+            [data-baseweb="popover"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: #0f111a; }
             ::-webkit-scrollbar-thumb { background: #212433; border-radius: 3px; }
@@ -258,7 +310,7 @@ _THEMES = {
             }
             .terminal-line { border-bottom: 1px solid #2b3036; padding: 3px 0; }
             .terminal-line:last-child { border-bottom: none; }
-            .user-content, .elena-content, .robert-content { border-radius: 6px; }
+            .user-content, .elena-content, .chad-content, .robert-content { border-radius: 6px; }
             .user-content {
                 background-color: #ffffff;
                 border: 1px solid #d0d7de;
@@ -282,6 +334,20 @@ _THEMES = {
                 box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             }
             .elena-content strong { color: #0366d6; }
+            .chad-content {
+                background-color: #ffffff;
+                border-left: 4px solid #d15704;
+                border-top: 1px solid #d0d7de;
+                border-right: 1px solid #d0d7de;
+                border-bottom: 1px solid #d0d7de;
+                padding: 14px 18px;
+                color: #24292f;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .chad-content strong { color: #d15704; }
             .robert-content {
                 background-color: #ffffff;
                 border-left: 4px solid #f66a0a;
@@ -325,7 +391,27 @@ _THEMES = {
             [data-testid="stChatInput"] input::placeholder { color: #656d76; }
             [data-testid="stFileUploader"] { background-color: #f6f8fa; border: 1px dashed #d0d7de; border-radius: 6px; padding: 8px; }
             [data-testid="stFileUploader"]:hover { border-color: #0366d6; }
-            [data-testid="stSelectbox"] label { color: #656d76; font-size: 12px; }
+            [data-testid="stSelectbox"] label {
+                color: #24292f;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 15px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
+            [data-baseweb="popover"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: #f6f8fa; }
             ::-webkit-scrollbar-thumb { background: #d0d7de; border-radius: 3px; }
@@ -420,6 +506,19 @@ _THEMES = {
                 box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
             }
             .elena-content strong { color: #00f0ff; text-shadow: 0 0 4px #00f0ff; }
+            .chad-content {
+                background-color: #0a0018;
+                border: 1px solid #ff9e3b;
+                border-left: 4px solid #ff9e3b;
+                border-radius: 4px;
+                padding: 14px 18px;
+                color: #ffd9a0;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 0 12px rgba(255, 158, 59, 0.15);
+            }
+            .chad-content strong { color: #ff9e3b; text-shadow: 0 0 4px #ff9e3b; }
             .robert-content {
                 background-color: #0a0018;
                 border: 1px solid #ff007f;
@@ -463,7 +562,27 @@ _THEMES = {
             [data-testid="stChatInput"] input::placeholder { color: #5a4a7a; }
             [data-testid="stFileUploader"] { background-color: #0a0018; border: 1px dashed #1a0a2e; border-radius: 4px; padding: 8px; }
             [data-testid="stFileUploader"]:hover { border-color: #ff007f; }
-            [data-testid="stSelectbox"] label { color: #7a6a9a; font-size: 12px; }
+            [data-testid="stSelectbox"] label {
+                color: #a699c9;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 15px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
+            [data-baseweb="popover"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: #08010f; }
             ::-webkit-scrollbar-thumb { background: #1a0a2e; border-radius: 3px; }
@@ -554,6 +673,19 @@ _THEMES = {
                 margin: 4px 0;
             }
             .elena-content strong { color: #00ffff; }
+            .chad-content {
+                background-color: #000000;
+                border: 3px solid #ff9e3b !important;
+                border-radius: 0px !important;
+                padding: 14px 18px;
+                color: #ffffff;
+                font-family: 'Courier New', monospace !important;
+                font-weight: 900 !important;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+            }
+            .chad-content strong { color: #ff9e3b; }
             .robert-content {
                 background-color: #000000;
                 border: 3px solid #ffff00 !important;
@@ -593,7 +725,27 @@ _THEMES = {
             [data-testid="stChatInput"] input::placeholder { color: #666666; }
             [data-testid="stFileUploader"] { background-color: #000000; border: 2px dashed #ffffff !important; border-radius: 0px !important; padding: 8px; }
             [data-testid="stFileUploader"]:hover { border-color: #00ffff !important; }
-            [data-testid="stSelectbox"] label { color: #cccccc; font-size: 12px; }
+            [data-testid="stSelectbox"] label {
+                color: #dddddd;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 15px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
+            [data-baseweb="popover"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
             ::-webkit-scrollbar { width: 8px; height: 8px; }
             ::-webkit-scrollbar-track { background: #000000; }
             ::-webkit-scrollbar-thumb { background: #ffffff; border-radius: 0px !important; }
@@ -635,7 +787,7 @@ _THEMES = {
                 box-shadow: 0 0 4px #33ff33;
             }
             [data-testid="stSidebar"] .st-expander-header { color: #33ff33; font-weight: bold; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
-            [data-testid="stSidebar"] .stCaption { color: #33ff33; font-size: 12px; opacity: 0.8; }
+            [data-testid="stSidebar"] .stCaption { color: #66ff66; font-size: 13px; font-weight: 500; }
             [data-testid="stSidebar"] .stToggle { margin-bottom: 12px; }
             .stButton button {
                 background-color: #0a0f0d !important;
@@ -691,6 +843,19 @@ _THEMES = {
                 box-shadow: 0 0 4px #33ff33;
             }
             .elena-content strong { color: #66ff66; }
+            .chad-content {
+                background-color: #080c0a;
+                border: 1px solid #ff9e3b;
+                border-left: 4px solid #ff9e3b;
+                border-radius: 6px;
+                padding: 14px 18px;
+                color: #ffd9a0;
+                font-size: 16px;
+                line-height: 1.6;
+                margin: 4px 0;
+                box-shadow: 0 0 4px #ff9e3b;
+            }
+            .chad-content strong { color: #ff9e3b; }
             .robert-content {
                 background-color: #080c0a;
                 border: 1px solid #ffb000;
@@ -735,7 +900,27 @@ _THEMES = {
             [data-testid="stChatInput"] input::placeholder { color: #1a4a1a; }
             [data-testid="stFileUploader"] { background-color: #080c0a; border: 1px dashed #1a2a1a; border-radius: 6px; padding: 8px; box-shadow: 0 0 3px #33ff33; }
             [data-testid="stFileUploader"]:hover { border-color: #33ff33; }
-            [data-testid="stSelectbox"] label { color: #33ff33; font-size: 12px; opacity: 0.8; }
+            [data-testid="stSelectbox"] label {
+                color: #66ff66;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 15px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
+            [data-baseweb="popover"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+            }
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: #050807; }
             ::-webkit-scrollbar-thumb { background: #1a2a1a; border-radius: 3px; box-shadow: 0 0 3px #33ff33; }
@@ -753,6 +938,66 @@ def set_theme(name: str = "dark-tech") -> None:
         available = ", ".join(_THEMES)
         raise ValueError(f"Unknown theme '{name}'. Available: {available}")
     st.markdown(theme["css"], unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] .stCaption {
+                font-size: 13px !important;
+                font-weight: 500 !important;
+                opacity: 1 !important;
+                letter-spacing: 0.3px !important;
+            }
+            [data-testid="stSidebar"] .st-expander-header {
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                letter-spacing: 0.4px !important;
+            }
+            [data-testid="stSelectbox"] label {
+                font-size: 14px !important;
+                font-weight: 500 !important;
+                opacity: 1 !important;
+            }
+            [data-testid="stSelectbox"],
+            [data-testid="stSelectbox"] * {
+                cursor: pointer !important;
+            }
+            [data-testid="stSelectbox"] [data-baseweb="select"],
+            [data-testid="stSelectbox"] [data-baseweb="select"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, sans-serif !important;
+                font-size: 15px !important;
+                font-weight: 400 !important;
+                text-rendering: optimizeLegibility !important;
+                -webkit-font-smoothing: antialiased !important;
+                letter-spacing: 0.3px !important;
+            }
+            .MuiPopover-root,
+            .MuiPopover-root *,
+            .MuiMenu-paper,
+            .MuiMenu-paper *,
+            .MuiMenuItem-root,
+            .MuiMenuItem-root *,
+            [data-baseweb="popover"],
+            [data-baseweb="popover"] *,
+            [data-baseweb="menu"],
+            [data-baseweb="menu"] *,
+            [role="listbox"],
+            [role="listbox"] *,
+            [role="menu"],
+            [role="menu"] *,
+            [role="option"],
+            [role="option"] * {
+                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+                font-size: 16px !important;
+                font-weight: 500 !important;
+                line-height: 1.5 !important;
+                text-rendering: optimizeLegibility !important;
+                -webkit-font-smoothing: antialiased !important;
+                letter-spacing: normal !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def inject_custom_css() -> None:
@@ -767,12 +1012,34 @@ st.session_state.setdefault("messages", [])
 st.session_state.setdefault("log_entries", [])
 st.session_state.setdefault("sandbox_output", "")
 st.session_state.setdefault("theme", "dark-tech")
+st.session_state.setdefault("mcp_initialized", False)
+st.session_state.setdefault("mcp_available", False)
+st.session_state.setdefault("mcp_tools", [])
 
 # Pick up theme widget change (available on subsequent runs)
 if "theme_widget" in st.session_state:
     st.session_state["theme"] = st.session_state.theme_widget
 
 set_theme(st.session_state["theme"])
+
+# ── MCP Initialization (once per session) ──────────────────────────────
+if not st.session_state["mcp_initialized"]:
+    try:
+        initialize_mcp_sync()
+        tools = get_all_tools_sync()
+        if tools:
+            st.session_state["mcp_tools"] = tools
+            st.session_state["mcp_available"] = True
+            st.session_state.log_entries.append(
+                f"🔌 MCP: {len(tools)} tools ready"
+            )
+        else:
+            st.session_state["mcp_available"] = False
+            st.session_state.log_entries.append("🔌 MCP: no servers connected")
+    except Exception as e:
+        st.session_state["mcp_available"] = False
+        st.session_state.log_entries.append(f"🔌 MCP init error: {e}")
+    st.session_state["mcp_initialized"] = True
 
 # ── Sidebar ────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -785,12 +1052,27 @@ with st.sidebar:
     )
     st.session_state["mock_mode"] = st.session_state.mock_toggle
 
+    # ── MCP Status ─────────────────────────────────────────────────────────
+    mcp_ok = st.session_state.get("mcp_available", False)
+    mcp_count = len(st.session_state.get("mcp_tools", []))
+    status_icon = "🟢" if mcp_ok else "🔴"
+    st.caption(f"{status_icon} MCP Servers: {mcp_count} tools available" if mcp_ok else f"{status_icon} MCP Servers: offline")
+
     # ── Agent Skills Matrix ─────────────────────────────────────────────────
     with st.expander("⚙️ Agents", expanded=False):
         st.markdown("**🧠 Elena** — Socratic mentor (questions only, no code)")
-        st.markdown("**🔥 Chad** — Vibe coder (`inplace=True`)")
+        st.markdown("**🔥 Chad** — Vibe coder")
         st.markdown("**🛠️ Robert** — Sandbox (isolated code execution)")
         st.markdown("**👔 Geoffrey** — Head of AI (business goals)")
+
+    # ── MCP Tools ─────────────────────────────────────────────────────────
+    if st.session_state.get("mcp_available", False):
+        with st.expander("🔧 MCP Tools", expanded=False):
+            for tool in st.session_state["mcp_tools"]:
+                svr = tool.get("server", "?")
+                name = tool.get("name", "?")
+                desc = tool.get("description", "")[:80]
+                st.markdown(f"`{svr}` **{name}** — {desc}")
 
     # ── Workspace Data ──────────────────────────────────────────────────────
     with st.expander("📁 Data", expanded=False):
@@ -888,6 +1170,9 @@ def _render_message(msg: dict):
     elif agent == "elena":
         with st.chat_message("assistant", avatar="🧠"):
             st.markdown(_message_html(msg["content"], "elena-content", "Elena"), unsafe_allow_html=True)
+    elif agent == "chad":
+        with st.chat_message("assistant", avatar="🔥"):
+            st.markdown(_message_html(msg["content"], "chad-content", "Chad"), unsafe_allow_html=True)
     elif agent == "robert":
         with st.chat_message("assistant", avatar="🛠️"):
             st.markdown(_message_html(msg["content"], "robert-content", "Robert"), unsafe_allow_html=True)
@@ -924,11 +1209,13 @@ if user_input := st.chat_input("Your message…"):
     active_agent = determine_active_agent(text_clean)
     workspace_info = get_workspace_snapshot()
 
+    mcp_tools = st.session_state.get("mcp_tools", [])
+    mcp_available = st.session_state.get("mcp_available", False)
+
     if active_agent == "robert":
         with st.chat_message("assistant", avatar="🛠️"):
             st.session_state.log_entries.append("🤖 Invoking Robert (Sandbox)")
 
-            # Extract and run code if present
             has_code = (
                 "```python" in text_clean
                 or text_clean.startswith("import ")
@@ -944,15 +1231,19 @@ if user_input := st.chat_input("Your message…"):
                 except Exception as e:
                     sandbox_note = f"\n\nSandbox error:\n{e}"
 
-            robert_context = (
-                f"{ROBERT_SYSTEM_PROMPT}\n\n{workspace_info}"
-            )
+            robert_context = f"{ROBERT_SYSTEM_PROMPT}\n\n{workspace_info}"
 
             if st.session_state["mock_mode"]:
                 agent_text = get_mock_response("robert", workspace_info=workspace_info)
             else:
                 try:
-                    agent_text = call_live_gemini_api(robert_context, text_clean)
+                    if mcp_available and mcp_tools:
+                        agent_text = call_with_tools(
+                            robert_context, text_clean, mcp_tools,
+                            lambda s, n, a: call_tool_sync(s, n, a),
+                        )
+                    else:
+                        agent_text = call_live_gemini_api(robert_context, text_clean)
                 except Exception:
                     agent_text = get_mock_response("robert_429", workspace_info=workspace_info)
 
@@ -961,6 +1252,28 @@ if user_input := st.chat_input("Your message…"):
 
             st.markdown(_message_html(agent_text, "robert-content", "Robert"), unsafe_allow_html=True)
             st.session_state.messages.append({"role": "assistant", "content": agent_text, "agent": "robert"})
+    elif active_agent == "chad":
+        with st.chat_message("assistant", avatar="🔥"):
+            st.session_state.log_entries.append("🔥 Invoking Chad (Vibe Coder)")
+
+            chad_context = f"{CHAD_SYSTEM_PROMPT}\n\n{workspace_info}"
+
+            if st.session_state["mock_mode"]:
+                agent_text = get_mock_response("chad", workspace_info=workspace_info)
+            else:
+                try:
+                    if mcp_available and mcp_tools:
+                        agent_text = call_with_tools(
+                            chad_context, text_clean, mcp_tools,
+                            lambda s, n, a: call_tool_sync(s, n, a),
+                        )
+                    else:
+                        agent_text = call_live_gemini_api(chad_context, text_clean)
+                except Exception:
+                    agent_text = get_mock_response("chad_429", workspace_info=workspace_info)
+
+            st.markdown(_message_html(agent_text, "chad-content", "Chad"), unsafe_allow_html=True)
+            st.session_state.messages.append({"role": "assistant", "content": agent_text, "agent": "chad"})
     else:
         with st.chat_message("assistant", avatar="🧠"):
             st.session_state.log_entries.append("🧠 Invoking Elena (Mentor)")
@@ -971,7 +1284,13 @@ if user_input := st.chat_input("Your message…"):
                 agent_text = get_mock_response("elena", workspace_info=workspace_info)
             else:
                 try:
-                    agent_text = call_live_gemini_api(elena_context, text_clean)
+                    if mcp_available and mcp_tools:
+                        agent_text = call_with_tools(
+                            elena_context, text_clean, mcp_tools,
+                            lambda s, n, a: call_tool_sync(s, n, a),
+                        )
+                    else:
+                        agent_text = call_live_gemini_api(elena_context, text_clean)
                 except Exception:
                     agent_text = get_mock_response("elena_429", workspace_info=workspace_info)
 

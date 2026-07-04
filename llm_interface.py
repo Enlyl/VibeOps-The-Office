@@ -1,14 +1,20 @@
 """
 llm_interface.py — VibeOps Gemini API Client
 =============================================
+Supports text-only and function-calling (MCP tool) flows.
 """
 
+import json
 import logging
+from typing import Any
+
 from google import genai
 from google.genai import types
 from config import config
 
 logger = logging.getLogger("vibeops.llm")
+
+_MAX_TOOL_LOOP_TURNS = 5
 
 
 # ============================================================================
@@ -32,6 +38,129 @@ def call_live_gemini_api(system_instruction: str, prompt: str) -> str:
         ),
     )
     return response.text if response.text else "[Empty response]"
+
+
+def call_with_tools(
+    system_instruction: str,
+    prompt: str,
+    tool_definitions: list[dict],
+    tool_executor: Any,
+) -> str:
+    """
+    Call Gemini with function-declaration tools and run the tool loop.
+    `tool_definitions` — list of dicts with 'name', 'description', 'parameters', 'server'.
+    `tool_executor` — callable(server, tool_name, args) -> dict (result or error).
+    """
+    cfg = config()
+    client = genai.Client(api_key=cfg.gemini_api_key)
+
+    _ALLOWED_PARAM_KEYS = {"type", "description", "properties", "required", "items", "enum", "default"}
+
+    def _clean_params(params: dict) -> dict:
+        if not isinstance(params, dict):
+            return {"type": "object", "properties": {}}
+        cleaned = {k: v for k, v in params.items() if k in _ALLOWED_PARAM_KEYS}
+        cleaned.setdefault("type", "object")
+        if "properties" in cleaned:
+            for pname, pval in cleaned["properties"].items():
+                if isinstance(pval, dict):
+                    cleaned["properties"][pname] = _clean_params(pval)
+                elif not isinstance(pval, dict):
+                    cleaned["properties"][pname] = {"type": "string"}
+        return cleaned
+
+    declarations = []
+    for fd in tool_definitions:
+        declarations.append(
+            types.FunctionDeclaration(
+                name=fd["name"],
+                description=fd.get("description", ""),
+                parameters=_clean_params(fd.get("parameters", {})) if fd.get("parameters") else {"type": "object"},
+            )
+        )
+
+    contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+
+    if not declarations:
+        response = client.models.generate_content(
+            model=cfg.gemini_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7,
+            ),
+        )
+        return response.text if response.text else "[Empty response]"
+
+    tool_config = types.Tool(functionDeclarations=declarations)
+    history: list[types.Content] = []
+    final_text = ""
+
+    for _ in range(_MAX_TOOL_LOOP_TURNS):
+        response = client.models.generate_content(
+            model=cfg.gemini_model,
+            contents=contents + history,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=[tool_config],
+                temperature=0.7,
+            ),
+        )
+
+        if not response.candidates:
+            final_text = response.text or "[Empty response]"
+            break
+
+        candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            final_text = response.text or "[Empty response]"
+            break
+
+        has_tool_call = any(part.function_call for part in candidate.content.parts)
+
+        if not has_tool_call:
+            final_text = "".join(
+                p.text for p in candidate.content.parts if p.text
+            ) or "[Empty response]"
+            break
+
+        for part in candidate.content.parts:
+            fc = part.function_call
+            if fc is None:
+                continue
+
+            tool_name = fc.name
+            tool_args = dict(fc.args) if fc.args else {}
+
+            server_name = ""
+            for td in tool_definitions:
+                if td["name"] == tool_name:
+                    server_name = td.get("server", "")
+                    break
+
+            result = tool_executor(server_name, tool_name, tool_args)
+
+            history.append(
+                types.Content(
+                    role="model",
+                    parts=[types.Part(function_call=fc)],
+                )
+            )
+            history.append(
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                name=tool_name,
+                                response={"content": json.dumps(result, ensure_ascii=False)},
+                            )
+                        )
+                    ],
+                )
+            )
+
+    return final_text or "[Empty response]"
 
 
 def get_mock_response(agent: str, workspace_info: str = "") -> str:

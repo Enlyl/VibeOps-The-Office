@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "devdocs": {
+      "command": "npx",
+      "args": ["-y", "@arabold/docs-mcp-server@latest"],
+      "description": "Fetch documentation from DevDocs.io for Python, pandas, numpy, scikit-learn, matplotlib, seaborn, and the broader Data Science / ML stack."
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "description": "Fetch and extract content from any HTTP(S) URL. Supports text, markdown, and HTML formats."
+    }
+  }
+}
