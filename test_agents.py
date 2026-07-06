@@ -101,12 +101,11 @@ def main():
         forbidden_agents=["chad", "robert", "geoffrey"],
     ))
 
-    # Тест 2: Chad по имени
-    # Note: Chad's mock returns destructive code → Rule B fires → Elena warns
+    # Тест 2: Chad по имени → только Chad (Rule B sets flag, no auto-Elena)
     results.append(run_test(
-        name="[2] Chad name-routing (+ Rule B → Elena)",
+        name="[2] Chad name-routing (single agent)",
         prompt="Chad, как быстро почистить данные?",
-        expected_agents=["chad", "elena"],
+        expected_agents=["chad"],
         forbidden_agents=["robert", "geoffrey"],
     ))
 
@@ -126,11 +125,11 @@ def main():
         forbidden_agents=["chad", "elena", "robert"],
     ))
 
-    # Тест 5: Дефолтный маршрут Chad→Elena
+    # Тест 5: Дефолтный маршрут → Elena (single agent)
     results.append(run_test(
-        name="[5] Default chat path (Chad→Elena)",
+        name="[5] Default chat path (Elena)",
         prompt="Что такое дисбаланс классов?",
-        expected_agents=["chad", "elena"],
+        expected_agents=["elena"],
         forbidden_agents=["geoffrey"],
     ))
 

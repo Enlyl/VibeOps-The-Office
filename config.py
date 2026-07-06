@@ -43,7 +43,7 @@ TOKEN_LIMIT: int = 1_000_000
 MEMORY_WINDOW: int = 10
 
 # Sandbox timeout per Pillar 4
-SANDBOX_TIMEOUT_SECONDS: int = 20
+SANDBOX_TIMEOUT_SECONDS: int = 10
 
 # MCP read-only workspace paths per Pillar 3
 MCP_DIRTY_DATA_PATH: str = "./workspace/dirty_data.csv"

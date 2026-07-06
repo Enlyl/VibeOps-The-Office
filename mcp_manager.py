@@ -220,7 +220,19 @@ def _run_async(coro):
     loop = _ensure_mcp_loop()
     if loop is None:
         return None
-    return asyncio.run_coroutine_threadsafe(coro, loop).result()
+    try:
+        return asyncio.run_coroutine_threadsafe(coro, loop).result()
+    except RuntimeError as e:
+        if "cancel scope" in str(e).lower():
+            logger.warning("MCP anyio cross-task error, restarting loop: %s", e)
+            global _MCP_LOOP, _MCP_LOOP_THREAD
+            _MCP_LOOP = None
+            _MCP_LOOP_THREAD = None
+            loop = _ensure_mcp_loop()
+            if loop is None:
+                return None
+            return asyncio.run_coroutine_threadsafe(coro, loop).result()
+        raise
 
 
 def _stop_mcp_loop():

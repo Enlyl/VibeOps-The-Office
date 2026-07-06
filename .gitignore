@@ -47,6 +47,7 @@ sandbox_output/
 
 # --- Long-term Memory / User Profiles (Pillar 5) ---
 workspace/user_profiles/
+workspace/user_profile.json
 workspace/*.session
 
 # --- Logs ---

@@ -203,9 +203,19 @@ def get_mock_response(agent: str, workspace_info: str = "") -> str:
             f"{ws}\n\n"
             "I can still discuss the approach. What's the transformation you need?"
         ),
+        "chad_429": (
+            "🔥 **CHAD (Simulation):** Live API is down, bro! "
+            "But the quick fix is always the same — just drop the nulls. "
+            "We'll figure out the details when the API is back."
+        ),
         "geoffrey": (
             "👔 **GEOFFREY:** Our key business goal is improving analytics "
             "quality and reducing customer churn."
+        ),
+        "geoffrey_429": (
+            "👔 **GEOFFREY (Simulation):** The live API is currently unavailable. "
+            "Our business priorities remain unchanged — focus on analytics quality "
+            "and customer retention metrics."
         ),
     }
     return pool.get(agent, f"[Mock response for {agent}]")
