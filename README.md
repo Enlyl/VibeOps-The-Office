@@ -1,4 +1,4 @@
-# ?? VibeOps — Multi-Agent Data Science Assistant
+#VibeOps â€” Multi-Agent Data Science Assistant
 
 VibeOps is an educational multi-agent simulation dashboard designed to safely guide users through data science, table cleaning, and validation workflows. It demonstrates state-of-the-art patterns in AI agent architectures, sandboxing, Model Context Protocol (MCP), and custom output guardrails.
 
@@ -6,44 +6,44 @@ Built as the Capstone Project for the **Kaggle 5-Day AI Agents Intensive Course 
 
 ---
 
-## ??? Architecture Overview
+## Architecture Overview
 
 VibeOps utilizes a 5-stage orchestration pipeline built on a state machine:
 
 `
                   USER INPUT
-                      ¦
-                      ¡
+                      Â¦
+                      Â¡
                ANALYSIS STAGE
                (Semantic Gating)
                +-- Code Query ---------> Robert (Sandbox Engine)
-               ¦                             ¦ (requires User approval)
-               ¦                             ¡
-               ¦                        [VIBE DIFF]
-               ¦                             ¦ (Approved)
-               ¦                             ¡
-               ¦                        [SANDBOX RUN] 
-               ¦                             ¦
-               ¦                             ¡
+               Â¦                             Â¦ (requires User approval)
+               Â¦                             Â¡
+               Â¦                        [VIBE DIFF]
+               Â¦                             Â¦ (Approved)
+               Â¦                             Â¡
+               Â¦                        [SANDBOX RUN] 
+               Â¦                             Â¦
+               Â¦                             Â¡
                L-- Chat / Q&A ---------> Chad (Vibe Coder)
-                                             ¦
-                                             ¡
+                                             Â¦
+                                             Â¡
                                          Elena (Socratic Mentor)
-                                             ¦
-                                             ¡
+                                             Â¦
+                                             Â¡
                                      VERIFICATION STAGE
                                      (LLM-as-Judge & Guardrails)
                                      +-- Rule A: Socratic Violation -> Rollback & Rerun
                                      +-- Rule B: Destructive warning -> Force warning
                                      L-- Rule C: Toxicity check -> Block
-                                             ¦
-                                             ¡
+                                             Â¦
+                                             Â¡
                                          USER VIEW
 `
 
 ---
 
-## ?? The Data Squad (Agent Roster)
+## The Data Squad (Agent Roster)
 
 1. **?? Elena (Senior Mentor & Scientist)**: Uses the Socratic method to ask guiding questions about data distributions, missing values, and pandas APIs. **Never** provides ready-to-use code blocks.
 2. **?? Chad (The Vibe Coder)**: Junior data scientist representing the "vibe coding" anti-pattern. Suggests quick, sometimes destructive solutions (like inplace=True) to stress-test guardrails.
@@ -67,7 +67,7 @@ VibeOps utilizes a 5-stage orchestration pipeline built on a state machine:
 
 ---
 
-## ???>? How to Run
+## How to Run
 
 1.  **Clone the workspace** and navigate to the directory.
 2.  Create a .env file in the root directory:
@@ -86,5 +86,5 @@ VibeOps utilizes a 5-stage orchestration pipeline built on a state machine:
 
 ---
 
-## ?? Gherkin BDD Contracts
+## Gherkin BDD Contracts
 All orchestration paths are validated against Gherkin criteria defined in ibeops_simulation.feature.
