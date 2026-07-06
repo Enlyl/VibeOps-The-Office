@@ -98,11 +98,4 @@ Open **http://localhost:8501**
 | `test_bdd.py` | BDD contract tests |
 | `kaggle_submission/` | Writeups, script, screenshots |
 
----
 
-## Kaggle Submission
-
-- **Track**: Agents for Business / Freestyle
-- **Writeup**: `kaggle_submission/PROJECT_DESCRIPTION.md` (EN) / `PROJECT_DESCRIPTION_RU.md` (RU)
-- **Video Script**: `kaggle_submission/VIDEO_SCRIPT.md`
-- **Concepts**: Multi-Agent, Guardrails, Sandbox + Vibe Diff (HITL)
